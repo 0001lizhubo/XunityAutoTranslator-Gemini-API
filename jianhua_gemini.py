@@ -21,7 +21,7 @@ Model_Type =  "gemini-2.0-flash-001"    # 使用的模型类型，选择 GenAI �
 # 创建 Google GenAI 客户端实例
 # 使用 genai.Client 进行客户端初始化，并配置 API 密钥
 # 注意：请将 "YOUR_API_KEY" 替换为您自己的 Google GenAI API 密钥
-client = genai.Client(api_key="AIzaSyDEABSWnVhcpF8RdDcdCGxSv1JcPVL6E7o") # 使用 genai.Client 初始化客户端，并配置 API 密钥  **请替换为您的 API 密钥**
+client = genai.Client(api_key="YOUR_API_KEY") # 使用 genai.Client 初始化客户端，并配置 API 密钥  **请替换为您的 API 密钥**
 
 # 译文重复内容检测参数
 repeat_count=5 # 重复内容阈值。如果译文中有任意单字或单词连续重复出现次数大于等于 repeat_count，则认为译文质量不佳，会触发重试翻译逻辑
