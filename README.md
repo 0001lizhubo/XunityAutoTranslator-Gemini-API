@@ -69,3 +69,6 @@ client = genai.Client(api_key="YOUR_API_KEY") # 替换为你的 API 密钥
 - prompt: 基础提示词 (Prompt)，用于指导 AI 模型进行翻译。您可以根据需要修改提示词，以优化翻译效果。 
 - prompt_list: 提示词列表，默认为包含单个基础提示词的列表。您可以配置多个提示词，程序会在翻译失败时自动尝试使用列表中的下一个提示词进行重试翻译。 
 - MAX_WORKERS: 线程池最大工作线程数，默认为 2。您可以根据服务器性能和并发需求调整线程池大小。
+
+### 配置XUnity.AutoTranslator
+参考上一个项目：[项目地址](https://github.com/0001lizhubo/XUnity.AutoTranslator-deepseek/tree/main)
