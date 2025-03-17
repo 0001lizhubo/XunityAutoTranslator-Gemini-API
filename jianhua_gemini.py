@@ -118,15 +118,13 @@ def handle_translation(text, translation_queue):
     """
     处理翻译请求的核心函数.
     """
-    text = unquote(text) # URL 解码
+    text = unquote(text)  # URL 解码
 
     max_retries = 3  # 最大 API 请求重试次数
     retries = 0  # 重试计数器
 
-    special_chars = ['，', '。', '？','...'] # 句末特殊字符
-    text_end_special_char = None
-    if text and text[-1] in special_chars: # 避免空字符串索引错误
-        text_end_special_char = text[-1]
+    special_chars = ['，', '。', '？', '...']  # 句末特殊字符
+    text_end_special_char = text[-1] if text and text[-1] in special_chars else None
 
     special_char_start = "「"
     special_char_end = "」"
@@ -136,74 +134,63 @@ def handle_translation(text, translation_queue):
     if has_special_start and has_special_end:
         text = text[len(special_char_start):-len(special_char_end)]
 
-    try: # 捕获 API 异常
-        dict_inuse = get_dict(text, prompt_dict) # 获取字典词汇 (优化: 仅调用一次)
-        for i in range(len(prompt_list)): # 遍历提示词列表
-            prompt = prompt_list[i]
-            if dict_inuse: # 如果有字典词汇，则添加字典提示
-                prompt += dprompt_list[i] + str(dict_inuse)
+    while retries < max_retries:  # 使用循环代替递归
+        try:
+            dict_inuse = get_dict(text, prompt_dict)  # 获取字典词汇 (优化: 仅调用一次)
+            for i in range(len(prompt_list)):  # 遍历提示词列表
+                prompt = prompt_list[i]
+                if dict_inuse:  # 如果有字典词汇，则添加字典提示
+                    prompt += dprompt_list[i] + str(dict_inuse)
 
-            content_to_translate = prompt + text # 构建完整的翻译内容
+                content_to_translate = prompt + text  # 构建完整的翻译内容
 
-            response_test = client.models.generate_content( # API 调用
-                model=Model_Type, contents=content_to_translate
-            )
-            translations = response_test.text
-            print(f"【API 原始输出 (未经处理):】\n{repr(translations)}")  # 打印原始值
-            if translations.endswith("\n"): # 移除尾部换行符
-                translations = translations[:-1]
+                response_test = client.models.generate_content(  # API 调用
+                    model=Model_Type, contents=content_to_translate
+                )
+                translations = response_test.text
+                if translations.endswith("\n"):  # 移除尾部换行符
+                    translations = translations[:-1]
 
-            print(f"【API 翻译结果 (经处理):】\n{repr(translations)}") # 打印处理后的值，用于调试或日志记录
-            # print(f'{prompt}\n{translations}')  # 打印提示词和翻译结果, 调试用
+                if has_special_start and has_special_end:  # 特殊字符处理
+                    if not translations.startswith(special_char_start):
+                        translations = special_char_start + translations
+                    if not translations.endswith(special_char_end):
+                        translations = translations + special_char_end
 
+                translation_end_special_char = translations[-1] if translations and translations[-1] in special_chars else None
 
-            if has_special_start and has_special_end: # 特殊字符处理
-                if not translations.startswith(special_char_start):
-                    translations = special_char_start + translations
-                if not translations.endswith(special_char_end):
-                    translations = translations + special_char_end
+                if text_end_special_char and translation_end_special_char:
+                    if text_end_special_char != translation_end_special_char:
+                        translations = translations[:-1] + text_end_special_char
+                elif text_end_special_char and not translation_end_special_char:
+                    translations += text_end_special_char
+                elif not text_end_special_char and translation_end_special_char:
+                    translations = translations[:-1]
 
-            translation_end_special_char = None
-            if translations and translations[-1] in special_chars: # 避免空字符串索引错误
-                translation_end_special_char = translations[-1]
+                contains_japanese_characters = contains_japanese(translations)  # 检测日文
+                repeat_check = has_repeated_sequence(translations, repeat_count)  # 重复检测
 
-            if text_end_special_char and translation_end_special_char:
-                if text_end_special_char != translation_end_special_char:
-                    translations = translations[:-1] + text_end_special_char
-            elif text_end_special_char and not translation_end_special_char:
-                translations += text_end_special_char
-            elif not text_end_special_char and translation_end_special_char:
-                translations = translations[:-1]
+                if not contains_japanese_characters and not repeat_check:  # 质量检测通过则跳出循环
+                    translation_queue.put(translations)  # 放入结果队列
+                    return  # 成功返回
+                elif contains_japanese_characters:
+                    print("\033[31m检测到译文中包含日文字符，尝试使用下一个提示词进行翻译。\033[0m")
+                    continue
+                elif repeat_check:
+                    print("\033[31m检测到译文中存在重复短语。\033[0m")
+                    break  # 跳出循环，进入重试逻辑
 
-            contains_japanese_characters = contains_japanese(translations) # 检测日文
-            repeat_check = has_repeated_sequence(translations, repeat_count) # 重复检测
+        except Exception as e:
+            retries += 1
+            print(f"\033[31mAPI请求超时或发生错误 (第 {retries} 次重试): {e}\033[0m")
+            if retries == max_retries:
+                print(f"\033[31m达到最大重试次数，翻译失败。\033[0m")
+                translation_queue.put(False)  # 放入失败标志
+                return
+            time.sleep(1)  # 等待重试
 
-            if not contains_japanese_characters and not repeat_check: # 质量检测通过则跳出循环
-                break
-            elif contains_japanese_characters:
-                print("\033[31m检测到译文中包含日文字符，尝试使用下一个提示词进行翻译。\033[0m")
-                continue
-            elif repeat_check:
-                print("\033[31m检测到译文中存在重复短语。\033[0m")
-                # 可以在此处添加更复杂的重试策略，例如更换提示词组合，调整模型参数等 (当前版本暂未实现)
-                break
-
-        if not contains_japanese_characters and not repeat_check: # 最终质量检测
-            pass # 翻译成功
-        print(f"\033[36m[译文]\033[0m:\033[31m {translations}\033[0m")
-        print("-------------------------------------------------------------------------------------------------------")
-        translation_queue.put(translations) # 放入结果队列
-
-    except Exception as e: # API 异常处理
-        retries += 1
-        print(f"\033[31mAPI请求超时或发生错误 (第 {retries} 次重试): {e}\033[0m") # 打印错误信息
-        if retries == max_retries:
-            print(f"\033[31m达到最大重试次数，翻译失败。\033[0m")
-            translation_queue.put(False) # 放入失败标志
-            return # 达到最大重试次数，返回
-        time.sleep(1) # 等待重试
-        handle_translation(text, translation_queue) # 递归重试
-        return # 重试后返回
+    # 如果循环结束仍未成功
+    translation_queue.put(False)
 
 
 @app.route('/translate', methods=['GET'])
